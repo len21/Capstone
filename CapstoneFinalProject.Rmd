@@ -1,204 +1,154 @@
 ---
 title: "Final Capstone Project"
 author: "Moira Lennox"
-date: "November 2r, 2015"
+date: "November 22nd, 2015"
 output: pdf_document
 ---
 
-```{r setup,echo=FALSE} 
-setwd("/Users/moiralennox/GitHub/Capstone")
-#setwd("~/Documents/IT Documents/Data Science Class/DSCapStone")
-
+```{r setup,echo=FALSE, warning=FALSE, message=FALSE} 
 # get packages that are needed
 library(knitr)
 library(data.table)
 library(car) 
+library(cowplot)
+library(sandwich)
+library(msm)
+require(pscl) # ZINB model
+library(plyr)
 library(ggplot2)
+library(png)
+library(grid)
 
 ```
 
 ## Title & Introduction
-The data set for this capstone project was supplied by Yelp and is a subset of data for the years 2004 – 2015 and contains a number of counties. The yelp data supplied was made up of 5 files namely: reviews, business, user, tips, checkin. My work will focus on two files namely the review and business files.
+The data set for this capstone project was supplied by Yelp and is a subset of data for the years 2004 – 2015 and contains a number of counties. The yelp data supplied was made up of 5 files namely: reviews, business, user, tips, checkin. My work will focus on only two files namely the review and business files. My objective for this report is to analyze the “yelp” data set by exploring and researching the relationship between sets of variables and the business attribute that identifies as “dogallowed” to see if I could answer the question(s) below. 
 
-My objective for this report is to analyze the “yelp” data set by exploring and researching the relationship between sets of variables and the business attribute that identifies as “dog allowed” to answer some questions. 
-
-Dogs can be a major part of the family. We love taking our dog everywhere with us, however she is not always welcome. So here is my question: Can the yelp dataset tell me if there was a trend in welcoming pets into various businesses? I plan to narrow my focus down to two major categories hotels and restaurants since these are the areas I care about the most. I am going to look at the review data from 2008-2014. I will compare business that allow dogs to business that do not and sum the review count for year over year comparison and then try to correlate those counts to dog references I find from data mining the review text for those references. I will look at the country trends to see if locations makes a difference.
-
-There is an attribute on the business dataset that determines if Dogs are allowed in that organization.
-
+Dogs can be a major part of the family. We love taking our dog everywhere with us, however she is not always welcome. So here is my question: Can the dataset tell me if there was a trend in welcoming pets into various businesses? I plan to narrow my focus down to two major categories hotels and restaurants since these are the areas I care about the most. I am going to look at the review data from 2008-2014. I will compare business that allow dogs to business that do not and then try to correlate those counts to dog references I find from data mining the review text for those references. I will look at the country trends to see if locations makes a difference.
 
 ## Data processing and Transformation
-I read in the json files for Business and Review, flatten them created a few new columns: main category, country
-and review year. I aggregated the review data up to the business level. The final step was merge the dataset into a single dataset. 
+I read in the json files for Business and Review, flatten them created a few new columns namely: main category, country and review year. I aggregated the review data up to the business level. The final step was mergeing the dataset into a single dataset. 
 
-
-```{r setup2 ,echo=FALSE}
-
+```{r setup2 ,echo=FALSE, cache=TRUE, warning=FALSE}
+setwd("/Users/moiralennox/GitHub/Capstone")
 load(file = "dt_merge.rda")
-#subset to year 2008-2015
+#subset to years of 2008-2015
 dt_merge_pet <- subset(dt_merge, revyear!=2015 & revyear!=2004 & revyear!=2005 & revyear!=2006 & revyear!=2007)
+# update the factors after subset
 dt_merge_pet$revyear = factor(dt_merge_pet$revyear)
 dt_merge_pet$country = factor(dt_merge_pet$country)
 
-
-dt_merge_pet$petlog <- log(dt_merge_pet$petcount+1)
-dt_merge_pet$revlog <- log(dt_merge_pet$revcount+1)
-dt_merge_pet$votefunlog <- log(dt_merge_pet$votefuncount+1)
-dt_merge_pet$voteusefullog <- log(dt_merge_pet$voteusefulcount+1)
-dt_merge_pet$votecoollog <- log(dt_merge_pet$votecoolcount+1)
-
-# Create just for box plot
+# Created just for box plot and regression
 dt_merge_pet2 <- subset(dt_merge_pet, dogsallowed== TRUE &revyear!=2015 & revyear!=2004 & revyear!=2005 & revyear!=2006 & revyear!=2007)
 
-
+# remove dataset not used
+rm(dt_merge)
 ```
 
 ```{r setup3 ,echo=TRUE}
 str(dt_merge_pet)
-
 ```
 
 ## Exploratory Data Analysis
-A quick boxplot to review the pet count per year. The data is heavyly
-skewed so we I did the log of the petcount.
+A quick histogram revealed that the pet review count data are heavily
+Skewed. This means we will need to transform the data when we apply the various
+models.
 
-```{r da1,echo=FALSE, warnings = FALSE}
-ggplot(data=dt_merge_pet2, aes(x=dogsallowed, y=petlog, fill=dogsallowed)) + geom_boxplot() +
-    stat_summary(fun.y=mean, colour="darkred", geom="point", 
-                 shape=18, size=3,show_guide = FALSE) + 
-    facet_grid(.~revyear) +
-    ggtitle("Log of Pet Count by Year") +
-    labs(x="Year",y="Log of Pet Count") 
-
-```
-
-```{r da2,echo=FALSE, warnings = FALSE}
-means <- aggregate(petlog~revyear, dt_merge_pet2, mean)
-means$petlog <- format(round(means$petlog, 2), nsmall = 2)
-print(t(means))
+```{r da1,echo=FALSE, warning=FALSE, message=FALSE}
+# The discrete response variable.
+plot1 <- ggplot(dt_merge_pet2, aes(petcount, fill = revyear)) +
+    ggtitle("Fig 1. # Petcount Reviews") +
+    geom_histogram(binwidth=.5, position="dodge")
+# Log transformed response variable.
+plot2 <- ggplot(dt_merge_pet2, aes(petcount)) + geom_histogram() + 
+    ggtitle("Fig 2. log(# Petcount Reviews)") + scale_x_log10()
+# Print plots side by side
+plot_grid(plot1, plot2, align='h')
 
 ```
 
-```{r da3,echo=FALSE}
+I quick look at the summary data for the petcount shows and consistent increase year over year. So we could make the initial assumption that pets are increasing being mentioned for pet friendly businesses and maybe this is implying that there might be an increase in pet friendly places.
 
-# create some new function to create scatter plot
-panel.cor <- function(x, y, digits=2, cex.cor)
-{
-    usr <- par("usr"); on.exit(par(usr))
-    par(usr = c(0, 1, 0, 1))
-    r <- abs(cor(x, y))
-    txt <- format(c(r, 0.123456789), digits=digits)[1]
-    test <- cor.test(x,y)
-    Signif <- ifelse(round(test$p.value,3)<0.001,"p<0.001",paste("p=",round(test$p.value,3)))  
-    text(0.5, 0.25, paste("r=",txt))
-    text(.5, .75, Signif)
-}
-
-panel.smooth<-function (x, y, col = "blue", bg = NA, pch = 18, 
-                        cex = 0.8, col.smooth = "red", span = 2/3, iter = 3, ...) 
-{
-    points(x, y, pch = pch, col = col, bg = bg, cex = cex)
-    ok <- is.finite(x) & is.finite(y)
-    if (any(ok)) 
-        lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), 
-              col = col.smooth, ...)
-}
-
-panel.hist <- function(x, ...)
-{
-    usr <- par("usr"); on.exit(par(usr))
-    par(usr = c(usr[1:2], 0, 1.5) )
-    h <- hist(x, plot = FALSE)
-    breaks <- h$breaks; nB <- length(breaks)
-    y <- h$counts; y <- y/max(y)
-    rect(breaks[-nB], 0, breaks[-1], y, col="cyan", ...)
-}
-
+```{r da2,echo=FALSE}
+sumdata <- ddply(dt_merge_pet2, c("revyear"), summarise,
+               N    = length(petcount),
+               mean = mean(petcount),
+               sd   = sd(petcount),
+               se   = sd / sqrt(N))
+sumdata
 ```
 
-
-```{r da4,echo=FALSE}
-
-pairs(~dogsallowed+petcount+revcount+revyear+maincat+country+votefuncount+voteusefulcount+votecoolcount+starsavg, 
-      data=dt_merge_pet,
-      lower.panel=panel.smooth, 
-      upper.panel=panel.cor,
-      diag.panel=panel.hist,
-      main="Fig 2. Scatterplot Matrix")
-
-```
-
+I did a boxplot and scatterplot matrix to see if there might be linear correlation between multiple variables. I used this is will help me pinpointing specific variables that might have similar correlations to my dogsalloed petcount data. I looked at the correlation and it is not very strong but revcount shows the best correlation with voteusefulcount a close second.
 
 ## Methods and Data
-With the use of linear regression models I quantify the relationships seen in the Exploratory Data Analysis section to find the best model fit and compare it with the base model.
+I tested three differnt models from the GLM family and show my outcomes. As a result of my initial data analysis I have selected to use a Zero-inflated negative binomial model for modeling the data. This model works well for count variables with excessive zeros. There is 45% response of zero for petcount variable. 
 
-```{r rm1,echo=FALSE}
+```{r rm1a,echo=TRUE,warning=FALSE, message=FALSE}
+# Look at three types of models
+fit1 <- glm(petcount~revcount+revyear+country+votefuncount+voteusefulcount+
+                +starsavg, data=dt_merge_pet2,family=poisson(link=log))
 
-fit<- lm(petcount~dogsallowed+revcount+revyear+maincat+country+votefuncount+
-         voteusefulcount+votecoolcount+starsavg-1,data=dt_merge_pet)
-summary(fit)
+fit2 <- zeroinfl(petcount~revcount+revyear+votefuncount+voteusefulcount+
+                +starsavg+country|revcount+revyear+votefuncount+voteusefulcount+
+                +starsavg+country,data=dt_merge_pet2)
 
+fit3 <- zeroinfl(petcount~revcount+revyear+votefuncount+voteusefulcount+
+                +starsavg+country|revcount+revyear+votefuncount+voteusefulcount+
+                +starsavg+country,data = dt_merge_pet2, dist = "negbin", EM = TRUE)
+```
 
-fit<- lm(petcount~revcount+votefuncount+voteusefulcount+votecoolcount-1,data=dt_merge_pet)
-summary(fit)
+The Vuong test compares the three models and we can see that the test statistic is significant, for model three which indicates that the zero-inflated model is best model for the job.
 
+All of the predictors in both the count and inflation portions of the model are statistically significant. This model fits the data significantly better than the null model, i.e., the intercept-only mode. To show that this is the case, we can compare with the current model to a null model without predictors using chi-squared test on the difference of log likelihoods, see below.
 
-# Dogs true
-fit2<- lm(petlog~revlog+revyear+maincat+country+votefunlog+voteusefullog+votecoollog+starsavg -1,
-          data=dt_merge_pet2)
-summary(fit2)
+```{r rm1c,echo=TRUE}
+mnull <- update(fit3, . ~ 1)
+pchisq(2 * (logLik(fit3) - logLik(mnull)), df = 6, lower.tail = FALSE)
+```
 
-fit2<- lm(petlog~revlog+maincat+votefunlog+country+votecoollog-1,data=dt_merge_pet2)
-summary(fit2)
+Review the results from model three which was selected.
+
+```{r rm2,echo=FALSE}
+summary(fit3)
+## Exponentiated coefficients
+expCoef <- exp(coef((fit3)))
+expCoef <- matrix(expCoef, ncol = 2)
+rownames(expCoef) <- c("Intercept","revcount","revyear2009","revyear2010","revyear2011","revyear2012","revyear2013","revyear2014","votefuncount","voteusefulcount","starsavg","countryDEU","countryUK","countryUSA") 
+colnames(expCoef) <- c("Count_Model","Zero_Model")
+expCoef
+```
+
+## Results
+The average pet count is 4.6. One unit increase in revcount increases the average pet count increase by 1.01 times. The revyear(s) show a general increase year over year. One unit increase in UK increases the average pet count increase by 2.25 times, followed by USA by 1.51
+
+## Discussion & Conclusion
+I took a very simplistic approach and extracted words like "pet"and "dog" to create a new variable from the review text data so that it could be explored. That said I do believe having better designed features will almost always guarantee better result. Even thou there was not a very strong correlation between the petcount and the other predictors there seems to be some indication that there is an increase in commentaty around pets and dogs which might indicate that there might be an increase on dog friendly places.
+As for country location the UK seemed to lead all the other locations for show an increase in the correlation.
+
+## Appendix
+Scatterplot Matrix used for exploratory data analysis.
+
+```{r fig.width=10, fig.height=10,echo=FALSE}
+setwd("/Users/moiralennox/GitHub/Capstone")
+img <- readPNG("Scatterplot_Matrix.png")
+grid.raster(img)
 
 ```
 
+The Vuong test compares the three models to show which is the best model for the job.
 
-## Results
+```{r a2, echo=TRUE, eval=FALSE}
+# Model 3 is the best model
+vuong(fit1, fit2) 
+vuong(fit2, fit3)  
+vuong(fit1, fit3)
 
+```
 
-## Discussion & Conclusion
-
-
-## Appendix
-Below is the code the was used to create my data set which I will use for all my anaylsis.
-
-This section will create 3 new functions below.
-
-```{r createnewfun, eval=FALSE }
-# create some new function to create scatter plot
-panel.cor <- function(x, y, digits=2, cex.cor)
-{
-    usr <- par("usr"); on.exit(par(usr))
-    par(usr = c(0, 1, 0, 1))
-    r <- abs(cor(x, y))
-    txt <- format(c(r, 0.123456789), digits=digits)[1]
-    test <- cor.test(x,y)
-    Signif <- ifelse(round(test$p.value,3)<0.001,"p<0.001",paste("p=",round(test$p.value,3)))  
-    text(0.5, 0.25, paste("r=",txt))
-    text(.5, .75, Signif)
-}
-
-panel.smooth<-function (x, y, col = "blue", bg = NA, pch = 18, 
-                        cex = 0.8, col.smooth = "red", span = 2/3, iter = 3, ...) 
-{
-    points(x, y, pch = pch, col = col, bg = bg, cex = cex)
-    ok <- is.finite(x) & is.finite(y)
-    if (any(ok)) 
-        lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), 
-              col = col.smooth, ...)
-}
-
-panel.hist <- function(x, ...)
-{
-    usr <- par("usr"); on.exit(par(usr))
-    par(usr = c(usr[1:2], 0, 1.5) )
-    h <- hist(x, plot = FALSE)
-    breaks <- h$breaks; nB <- length(breaks)
-    y <- h$counts; y <- y/max(y)
-    rect(breaks[-nB], 0, breaks[-1], y, col="cyan", ...)
-}
-
+```{r da3,echo=TRUE, eval=FALSE}
+# Correlations
+cor1 <- with(dt_merge_pet2, cor.test(petcount, revcount))
+cor2 <- with(dt_merge_pet2, cor.test(petcount, voteusefulcount))
 
 ```
 
