@@ -13,7 +13,7 @@ library(car)
 library(cowplot)
 library(sandwich)
 library(msm)
-require(pscl) # ZINB model
+library(pscl) # ZINB model
 library(plyr)
 library(ggplot2)
 library(png)
@@ -22,12 +22,12 @@ library(grid)
 ```
 
 ## Title & Introduction
-The data set for this capstone project was supplied by Yelp and is a subset of data for the years 2004 – 2015 and contains a number of counties. The yelp data supplied was made up of 5 files namely: reviews, business, user, tips, checkin. My work will focus on only two files namely the review and business files. My objective for this report is to analyze the “yelp” data set by exploring and researching the relationship between sets of variables and the business attribute that identifies as “dogallowed” to see if I could answer the question(s) below. 
+The data set for this capstone project was supplied by Yelp and is a subset of data for the years 2004 – 2015 and contains a number of countries. The Yelp data supplied was made up of 5 files: reviews, business, user, tips, checkin. My work will focus on two files, the review and business files. My objective is to analyze the data by exploring and researching the relationship between sets of variables and the business attribute that identifies as “dogsallowed” to see if I could answer the question(s) below. 
 
-Dogs can be a major part of the family. We love taking our dog everywhere with us, however she is not always welcome. So here is my question: Can the dataset tell me if there was a trend in welcoming pets into various businesses? I plan to narrow my focus down to two major categories hotels and restaurants since these are the areas I care about the most. I am going to look at the review data from 2008-2014. I will compare business that allow dogs to business that do not and then try to correlate those counts to dog references I find from data mining the review text for those references. I will look at the country trends to see if locations makes a difference.
+Dogs can be a major part of the family. We love taking our dog everywhere with us, however she is not always welcome. So here is my question: Can the data show there is an increase in welcoming pets into various businesses? I narrowed my focus to two major categories, hotels and restaurants, since these are the areas I most care about. I looked at the review years from 2008-2014, compared businesses that allow dogs to businesses that do not and then correlated those counts to dog references I found from data mining the review text. I looked at the country trends to see if location makes a difference.
 
-## Data processing and Transformation
-I read in the json files for Business and Review, flatten them created a few new columns namely: main category, country and review year. I aggregated the review data up to the business level. The final step was mergeing the dataset into a single dataset. 
+## Data Processing and Transformation
+I read in the business and review json files, flattened them, and created a few new columns: main category, country and review year. I aggregated the review data up to the business level. The final step was merging the data set into a single data set for analysis. 
 
 ```{r setup2 ,echo=FALSE, cache=TRUE, warning=FALSE}
 setwd("/Users/moiralennox/GitHub/Capstone")
@@ -50,9 +50,7 @@ str(dt_merge_pet)
 ```
 
 ## Exploratory Data Analysis
-A quick histogram revealed that the pet review count data are heavily
-Skewed. This means we will need to transform the data when we apply the various
-models.
+A quick histogram revealed the "petcount"" data is heavily skewed. This inferred I needed to transform the data to test various models.
 
 ```{r da1,echo=FALSE, warning=FALSE, message=FALSE}
 # The discrete response variable.
@@ -67,7 +65,7 @@ plot_grid(plot1, plot2, align='h')
 
 ```
 
-I quick look at the summary data for the petcount shows and consistent increase year over year. So we could make the initial assumption that pets are increasing being mentioned for pet friendly businesses and maybe this is implying that there might be an increase in pet friendly places.
+A quick look at the summary data for "petcount"" showed a consistent increase year over year. An initial assumption could be made that the mention of pets increased for pet-friendly businesses and maybe this is implying there might be an increase in pet-friendly places.
 
 ```{r da2,echo=FALSE}
 sumdata <- ddply(dt_merge_pet2, c("revyear"), summarise,
@@ -78,55 +76,53 @@ sumdata <- ddply(dt_merge_pet2, c("revyear"), summarise,
 sumdata
 ```
 
-I did a boxplot and scatterplot matrix to see if there might be linear correlation between multiple variables. I used this is will help me pinpointing specific variables that might have similar correlations to my dogsalloed petcount data. I looked at the correlation and it is not very strong but revcount shows the best correlation with voteusefulcount a close second.
+A box plot and scatter plot matrix were done to see if there was a linear correlation between multiple variables. I used this to help me pinpoint specific variables that might have similar correlations to my dogsallowed petcount data. The correlations are not very strong, but "revcount" shows the best correlation while "voteusefulcount" is a close second.
 
 ## Methods and Data
-I tested three differnt models from the GLM family and show my outcomes. As a result of my initial data analysis I have selected to use a Zero-inflated negative binomial model for modeling the data. This model works well for count variables with excessive zeros. There is 45% response of zero for petcount variable. 
+I ran and tested three models from the GLM family. The Vuong test compared the three models and found the test statistic significant for model three which indicates the Zero-inflated negative binomial model is the best model for the job. This model was also chosen because it works well for count variables with excessive zeros and petcount variable reflected this with a 45% zero count. 
 
 ```{r rm1a,echo=TRUE,warning=FALSE, message=FALSE}
 # Look at three types of models
-fit1 <- glm(petcount~revcount+revyear+country+votefuncount+voteusefulcount+
-                +starsavg, data=dt_merge_pet2,family=poisson(link=log))
+fit1 <- glm(petcount~revcount+revyear+country+voteusefulcount+starsavg, 
+            data=dt_merge_pet2,family=poisson(link=log))
 
-fit2 <- zeroinfl(petcount~revcount+revyear+votefuncount+voteusefulcount+
-                +starsavg+country|revcount+revyear+votefuncount+voteusefulcount+
-                +starsavg+country,data=dt_merge_pet2)
+fit2 <- zeroinfl(petcount~revcount+revyear+country+voteusefulcount+starsavg|
+                revcount+revyear+country+voteusefulcount+starsavg,data=dt_merge_pet2)
 
-fit3 <- zeroinfl(petcount~revcount+revyear+votefuncount+voteusefulcount+
-                +starsavg+country|revcount+revyear+votefuncount+voteusefulcount+
-                +starsavg+country,data = dt_merge_pet2, dist = "negbin", EM = TRUE)
+fit3 <- zeroinfl(petcount~revcount+revyear+country+voteusefulcount+starsavg|
+        revcount+revyear+country+voteusefulcount+starsavg,data = dt_merge_pet2, dist = "negbin", EM = TRUE)
 ```
 
-The Vuong test compares the three models and we can see that the test statistic is significant, for model three which indicates that the zero-inflated model is best model for the job.
-
-All of the predictors in both the count and inflation portions of the model are statistically significant. This model fits the data significantly better than the null model, i.e., the intercept-only mode. To show that this is the case, we can compare with the current model to a null model without predictors using chi-squared test on the difference of log likelihoods, see below.
+All of the predictors, in both the count and inflation portions of the model, are statistically significant. This model fits the data significantly better than the null model, i.e., the intercept-only mode. To demonstrate this, we can compare the current model to a null model without predictors using the chi-squared test on the difference of log likelihoods, see below.
 
 ```{r rm1c,echo=TRUE}
 mnull <- update(fit3, . ~ 1)
 pchisq(2 * (logLik(fit3) - logLik(mnull)), df = 6, lower.tail = FALSE)
 ```
 
-Review the results from model three which was selected.
+Below are the results for final model.
 
 ```{r rm2,echo=FALSE}
 summary(fit3)
 ## Exponentiated coefficients
 expCoef <- exp(coef((fit3)))
 expCoef <- matrix(expCoef, ncol = 2)
-rownames(expCoef) <- c("Intercept","revcount","revyear2009","revyear2010","revyear2011","revyear2012","revyear2013","revyear2014","votefuncount","voteusefulcount","starsavg","countryDEU","countryUK","countryUSA") 
+rownames(expCoef) <- c("Intercept","revcount","revyear2009","revyear2010","revyear2011","revyear2012",
+    "revyear2013","revyear2014","countryDEU","countryUK","countryUSA","voteusefulcount","starsavg") 
 colnames(expCoef) <- c("Count_Model","Zero_Model")
 expCoef
 ```
 
 ## Results
-The average pet count is 4.6. One unit increase in revcount increases the average pet count increase by 1.01 times. The revyear(s) show a general increase year over year. One unit increase in UK increases the average pet count increase by 2.25 times, followed by USA by 1.51
+The average petcount is 4.6 and a one unit increase in revcount increased the average petcount by 1.01 times. The revyear(s) show a general increase year over year. A one unit increase in the UK increased the average petcount by 2.25 times, followed by the USA by 1.51 times.
 
 ## Discussion & Conclusion
-I took a very simplistic approach and extracted words like "pet"and "dog" to create a new variable from the review text data so that it could be explored. That said I do believe having better designed features will almost always guarantee better result. Even thou there was not a very strong correlation between the petcount and the other predictors there seems to be some indication that there is an increase in commentaty around pets and dogs which might indicate that there might be an increase on dog friendly places.
-As for country location the UK seemed to lead all the other locations for show an increase in the correlation.
+I took a very simplistic approach and extracted words like "pet" and "dog" to create a new variable from the review text data so it could be researched. That said I do believe having better designed data elements would almost always guarantee better results. Even thou there was not a very strong correlation between the “petcount” and the other predictors, there seems to be some indication that there is an increase in commentary around pets in hotel and restaurant businesses. This could lead us to believe that this indicates an increase in pet-friendly places.
+
+For country location, the UK showed a stronger correlation than the USA and led all other countries.
 
 ## Appendix
-Scatterplot Matrix used for exploratory data analysis.
+Scatter plot matrix used for exploratory data analysis.
 
 ```{r fig.width=10, fig.height=10,echo=FALSE}
 setwd("/Users/moiralennox/GitHub/Capstone")
